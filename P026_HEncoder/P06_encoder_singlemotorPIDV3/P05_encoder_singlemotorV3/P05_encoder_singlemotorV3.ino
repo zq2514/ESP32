@@ -35,7 +35,7 @@ void IRAM_ATTR leftEncoderISR() {
 }
 
 
-// ===========串口字符串数据解析===================
+// ===================串口字符串数据解析===================
 const int MAX_CMD_LEN =64;      // 命令最大长度
 
 char inputBuffer[MAX_CMD_LEN];  // 存储接收到的命令
@@ -43,7 +43,13 @@ int bufferIndex = 0;            // 缓冲区当前位置
 bool commandReady = false;      // 标志，是否收到完整命令
 
 
-
+// =====================PID控制参数====================
+// float Kp = 0.6, Ki = 0.3, Kd = 0.05;
+float Kp = 0.3, Ki = 0.3, Kd = 0.05;
+float target_speed = 60;   // 目标转速 100 RPM
+float integral = 0;
+float last_error = 0;
+float output = 0;  //定义PID输出；
 
 void setup() {
   Serial.begin(115200);
@@ -57,6 +63,8 @@ void setup() {
     //建立 LEDC 通道 臂1
   ledcAttach(SERVO1_PIN1, FREQ, RESOLUTION);    // 通道，频率，分辨率；  ledcSetup() ledcAttachipin() 已经被淘汰了；
   ledcAttach(SERVO1_PIN2, FREQ, RESOLUTION);    // 通道，频率，分辨率；
+
+  lastTime = millis();  
 }
 
 void loop() {
@@ -71,9 +79,7 @@ void loop() {
     clearBufferAndReset();
   }
 
-
-  // === 单电机速度计算 ===
-    motorSpeedCalculate();
+  motorSpeedCalculate();
 }
 
 /**
@@ -105,6 +111,45 @@ void receiveSerialCommand() {
 
 
 /**
+ * 函数：清空缓冲区并重置状态
+ */
+void motorSpeedCalculate(){
+  unsigned long now = millis(); // 读取微秒；
+  if(now - lastTime >= 50){
+    // 读取脉冲数（注意关中断保护）
+    noInterrupts();
+    long pulses = leftPulses;
+    interrupts();
+
+    long deltaPulses = pulses - lastPulses;
+    float deltaTime = (now - lastTime) / 1000.0;   // 秒
+    float speed_rps = deltaPulses*1.0 / PULSES_PER_REV / deltaTime;  // 转/秒  BUG 这个地方有个bug，需要*1.0，负责不会进行计算；
+    float speed_rpm = speed_rps * 60;
+
+    Serial.print("Speed: ");
+    Serial.print(speed_rpm,4);
+    Serial.print(" RPM");   // 转每分钟；
+
+    //PID 计算
+    float error = target_speed - speed_rpm;
+    integral += error * deltaTime;
+    float derivative = (error - last_error) / deltaTime;
+    output = Kp * error + Ki * integral + Kd * derivative;
+
+    // 输出限幅
+    if (output > 1024) output = 1024;
+    if (output < 0) output = 0;
+
+    // 更新上次值
+    lastPulses = pulses;
+    lastTime = now;
+    last_error = error;
+
+  }
+}
+
+
+/**
  * 函数：解析并执行命令
  * 原理：使用strcmp()比较字符串，匹配则执行对应操作
  * 
@@ -112,8 +157,9 @@ void receiveSerialCommand() {
 void parseAndExecuteCommand(char* cmd) {
   Serial.print("Executing: ");
   Serial.println(cmd); // 回声，显示收到的命令
-  int supportSpeed1 = 600;   // 臂1 的支撑速度  // 分辨率10，意思是2的10次方 1024+1 中分辨率，数值越大精度越高，取值在0-20值之间，用来驱动电机；
-  int speed1 = 600;         // 臂1 的驱动速度；
+  
+  int supportSpeed1 = output;   // 臂1 的支撑速度  // 分辨率10，意思是2的10次方 1024+1 中分辨率，数值越大精度越高，取值在0-20值之间，用来驱动电机；
+  int speed1 = output; s        // 臂1 的驱动速度；
   
   if (strcmp(cmd, "f") == 0) {
     support1(supportSpeed1);
@@ -142,34 +188,6 @@ void clearBufferAndReset() {
   commandReady = false;
 }
 
-
-/**
- * 函数：清空缓冲区并重置状态
- */
-void motorSpeedCalculate(){
-  unsigned long now = millis(); // 读取微秒；
-  if(now - lastTime >= 50){
-    // 读取脉冲数（注意关中断保护）
-    noInterrupts();
-    long pulses = leftPulses;
-    interrupts();
-
-    long deltaPulses = pulses - lastPulses;
-    float deltaTime = (now - lastTime) / 1000.0;   // 秒
-    float speed_rps = deltaPulses*1.0 / PULSES_PER_REV / deltaTime;  // 转/秒  BUG 这个地方有个bug，需要*1.0，负责不会进行计算；
-    float speed_rpm = speed_rps * 60;
-
-    // 更新上次值
-    lastPulses = pulses;
-    lastTime = now;
-    
-    Serial.print("Speed: ");
-    Serial.print(speed_rpm,4);
-    Serial.println(" RPM");   // 转每分钟；
-  }
-
-}
- 
 
 void support1(int supportSpeed1){
   ledcWrite(SERVO1_PIN1,0); ledcWrite(SERVO1_PIN2,supportSpeed1);
