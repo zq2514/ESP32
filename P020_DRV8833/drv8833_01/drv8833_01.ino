@@ -8,7 +8,7 @@
 #define SERVO1_PIN1 18  // PWM输出引脚；
 #define SERVO1_PIN2 19  // PWM输出引脚；
 
-#define SERVO2_PIN1 22  // PWM输出引脚；
+#define SERVO2_PIN1 14  // PWM输出引脚；
 #define SERVO2_PIN2 23  // PWM输出引脚；
 
 #define SERVO3_PIN1 26 // PWM输出引脚；

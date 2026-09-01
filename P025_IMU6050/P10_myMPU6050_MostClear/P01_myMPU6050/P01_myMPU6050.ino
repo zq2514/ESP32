@@ -12,7 +12,7 @@ MPU6050 mpu;
 long   accelOffsetX,  accelOffsetY,   accelOffsetZ;
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
   Wire.begin();
   Serial.println("Initializing MPU6050...");
   mpu.initialize();
